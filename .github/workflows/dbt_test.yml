@@ -1,0 +1,45 @@
+name: dbt parse + test on PR
+
+on:
+  pull_request:
+    paths:
+      - 'models/**'
+      - 'tests/**'
+      - 'macros/**'
+      - 'dbt_project.yml'
+      - 'packages.yml'
+
+jobs:
+  dbt_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: pip install dbt-databricks dbt-utils dbt-expectations
+
+      - name: Configure profile (dev)
+        env:
+          DBT_HOST: ${{ secrets.DBT_HOST }}
+          DBT_TOKEN: ${{ secrets.DBT_TOKEN }}
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<EOF
+          {tenant}_default:
+            target: dev
+            outputs:
+              dev:
+                type: databricks
+                host: $DBT_HOST
+                token: $DBT_TOKEN
+                schema: dev_silver
+          EOF
+
+      - run: dbt deps
+      - run: dbt parse
+      - run: dbt compile
+      - run: dbt test --select state:modified+ --defer --state ./.state
